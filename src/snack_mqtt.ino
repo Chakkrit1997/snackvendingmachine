@@ -140,7 +140,7 @@ void loop()
 
   //lcd.clear();
   lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
-  lcd.print("Snack VendingMachine11");
+  lcd.print("Snack VendingMachine");
   lcd.setCursor(0, 1); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
   lcd.print("Payment via QR Code");
   lcd.setCursor(0, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
@@ -180,7 +180,11 @@ void loop()
 
   //
 
-  char key = customKeypad.getKey();
+  char key = customKeypad.waitForKey();
+  Serial.println(key);
+  delay(100);
+
+  /*char key = customKeypad.getKey();
   if (key)
   {
     key = NULL;
@@ -193,10 +197,6 @@ void loop()
     while (key != '*')
     {
       key = customKeypad.getKey();
-      if (key = '*')
-      {
-        break;
-      }
       if (key)
       {
         snack1 = key;
@@ -205,16 +205,12 @@ void loop()
         Serial.println(key);
         //break;
       }
-      if (key = '*')
-      {
-        break;
-      }
 
       client.loop();
       delay(50);
     }
     Serial.println(key);
-  }
+  }*/
 
   //client.loop();
 }

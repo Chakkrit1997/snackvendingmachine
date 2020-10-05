@@ -1,4 +1,8 @@
 #include <Arduino.h>
+//firebase
+#include "FirebaseESP8266.h"
+#define FIREBASE_HOST "snackvending-c37c3.firebaseio.com" //Without http:// or https:// schemes
+#define FIREBASE_AUTH "K5BmUe8oKOTfEPh1FUTT9JkaqUrksbrlirNwjnSO"
 // Server
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
@@ -14,13 +18,9 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-//firebase
-#include "FirebaseESP8266.h"
-#define FIREBASE_HOST "YOUR_FIREBASE_PROJECT.firebaseio.com" //Without http:// or https:// schemes
-#define FIREBASE_AUTH "YOUR_FIREBASE_DATABASE_SECRET"
-
 //Define Firebase Data object
 FirebaseData firebaseData;
+FirebaseJson data;
 
 // Config Wifi
 const char *ssid = "Room215";
@@ -135,9 +135,10 @@ void setup()
 }
 
 char snack1;
+
 void loop()
 {
-
+WELLCOME:
   //lcd.clear();
   lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
   lcd.print("Snack VendingMachine");
@@ -182,7 +183,101 @@ void loop()
 
   char key = customKeypad.waitForKey();
   Serial.println(key);
-  delay(100);
+  if (key == '#')
+  {
+  SELECTSNACK:
+    lcd.clear();
+    lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
+    lcd.print("Select Snack");
+    Serial.println("Select Snack");
+    key = NULL;
+    char key = customKeypad.waitForKey();
+    Serial.println(key);
+    if (key != 'A' && key != 'B' && key != 'C' && key != 'D' && key != '*' && key != '#' && key != '0')
+    {
+
+      String text = "/nowsnack/s" + String(key);
+      Serial.println(text);
+
+      if (Firebase.getInt(firebaseData, "/nowsnack/s" + String(key)))
+      {
+        
+        int nowsnacknum = firebaseData.intData();
+        Serial.println(firebaseData.intData());
+      SELECTNUMOFSNACK:
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Number of sweets");
+        lcd.setCursor(0, 1);
+        lcd.print(nowsnacknum);
+        Serial.println("Number of sweets");
+        key = NULL;
+        char key = customKeypad.waitForKey();
+        Serial.println(key);
+        if (key != 'A' && key != 'B' && key != 'C' && key != 'D' && key != '*' && key != '#' && key != '0')
+        {
+          int keyy = key-48;
+          Serial.println(keyy);
+          if (keyy <= nowsnacknum)
+          {
+            lcd.clear();
+            lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
+            lcd.print("Success");
+            delay(1000);
+          }
+          else
+          {
+            lcd.clear();
+            lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
+            lcd.print("Not enought");
+            delay(1000);
+            goto SELECTSNACK;
+          }
+        }
+        else if (key == '*')
+        {
+          goto SELECTSNACK;
+        }
+        else
+        {
+          lcd.clear();
+          lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
+          lcd.print("Enter 1-9");
+          Serial.println("Enter 9-9");
+          delay(1000);
+          goto SELECTNUMOFSNACK;
+        }
+
+        //Serial.println(firebaseData.intData());
+      }
+      else
+      {
+        lcd.clear();
+        lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
+        lcd.print("FireBase Error");
+        Serial.println("Error : " + firebaseData.errorReason());
+        delay(2000);
+        goto WELLCOME;
+      }
+    }
+    else if (key == '*')
+    {
+      goto WELLCOME;
+    }
+    else
+    {
+      lcd.clear();
+      lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
+      lcd.print("Enter 1-9");
+      Serial.println("Enter 1-9");
+      delay(1000);
+      goto SELECTSNACK;
+    }
+
+    //char num = customKeypad.waitForKey();
+  }
+
+  //delay(100);
 
   /*char key = customKeypad.getKey();
   if (key)
@@ -212,7 +307,7 @@ void loop()
     Serial.println(key);
   }*/
 
-  //client.loop();
+  client.loop();
 }
 
 void callback(char *topic, byte *payload, unsigned int length)

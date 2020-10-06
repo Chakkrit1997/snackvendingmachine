@@ -20,7 +20,7 @@
 
 //Define Firebase Data object
 FirebaseData firebaseData;
-FirebaseJson data;
+FirebaseJson nowbuy;
 
 // Config Wifi
 const char *ssid = "Room215";
@@ -75,29 +75,6 @@ void setup()
   Serial.println("Starting...");
   delay(10);
 
-  // SetuP connect wifi
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  // Setup Firebase
-  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
-  Firebase.reconnectWiFi(true);
-
-  // Setup MQTT
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(callback); // สร้างฟังก์ชันเมื่อมีการติดต่อจาก mqtt มา
-
   // Setup Keypad
   Wire.begin();         // GDY200622
   customKeypad.begin(); // GDY120705
@@ -118,43 +95,58 @@ void setup()
   // Turn on the blacklight and print a message.
   lcd.backlight();
   lcd.clear();
-
-  /*
-    lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
-    lcd.print("Welcome To");
-    lcd.setCursor(0, 1); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
-    lcd.print("Snack VendingMachine");
-    lcd.setCursor(2, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
-    lcd.print("Payment via");
-    lcd.setCursor(3, 3); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
-    lcd.print("QR Code");
-    delay(1000);
-  */
   //ESP.wdtDisable();
   //ESP.wdtEnable(WDTO_8S);
-}
 
-char snack1;
+  // SetuP connect wifi
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Connecting ");
+  lcd.setCursor(0, 1);
+  lcd.print("to Network ...");
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  // Setup Firebase
+  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+  Firebase.reconnectWiFi(true);
+
+  // Setup MQTT
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(callback); // สร้างฟังก์ชันเมื่อมีการติดต่อจาก mqtt มา
+}
 
 void loop()
 {
 WELLCOME:
-  //lcd.clear();
-  lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
+  lcd.clear();
+  lcd.setCursor(0, 0);
   lcd.print("Snack VendingMachine");
-  lcd.setCursor(0, 1); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
+  lcd.setCursor(0, 1);
   lcd.print("Payment via QR Code");
-  lcd.setCursor(0, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
-  lcd.print("WiFiStatus:");
+  lcd.setCursor(0, 2);
+  lcd.print("WIFI:"); //Network : CONNECTED
   if (WiFi.status() == WL_CONNECTED)
   {
-    lcd.setCursor(12, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
-    lcd.print("OK!");
+    lcd.setCursor(5, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
+    lcd.print(" OK!");
   }
   else
   {
-    lcd.setCursor(12, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
-    lcd.print("NO!");
+    lcd.setCursor(5, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
+    lcd.print(" NO!");
   }
 
   if (!client.connected())
@@ -164,22 +156,30 @@ WELLCOME:
     {
       client.subscribe(topic); // ชื่อ topic ที่ต้องการติดตาม
       Serial.println("connected");
-      lcd.setCursor(0, 3); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
-      lcd.print("MQTT: CONNECTED!");
+      lcd.setCursor(10, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
+      lcd.print("MQTT: OK!");
     }
     else
     { // ในกรณีเชื่อมต่อ mqtt ไม่สำเร็จ
+      lcd.setCursor(10, 2);
+      lcd.print("MQTT: NO!");
+      lcd.setCursor(0, 3);
+      lcd.print("Connecting......");
       Serial.print("failed, rc=");
       Serial.print(client.state());
       Serial.println(" try again in 5 seconds");
-      lcd.setCursor(0, 3); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
-      lcd.print("MQTT: FAILED!");
       delay(5000); // หน่วงเวลา 5 วินาที แล้วลองใหม่
       return;
     }
   }
-
-  //
+  else
+  {
+    Serial.println("connected");
+    lcd.setCursor(10, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
+    lcd.print("MQTT: OK!");
+  }
+  lcd.setCursor(0, 3); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
+  lcd.print("Press # to Order");
 
   char key = customKeypad.waitForKey();
   Serial.println(key);
@@ -189,43 +189,63 @@ WELLCOME:
     lcd.clear();
     lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
     lcd.print("Select Snack");
+    lcd.setCursor(0, 3);
+    lcd.print("[*]Back");
     Serial.println("Select Snack");
-    key = NULL;
-    char key = customKeypad.waitForKey();
-    Serial.println(key);
-    if (key != 'A' && key != 'B' && key != 'C' && key != 'D' && key != '*' && key != '#' && key != '0')
+    //key = NULL;
+    char select_key = customKeypad.waitForKey();
+    Serial.println(select_key);
+    if (select_key != 'A' && select_key != 'B' && select_key != 'C' && select_key != 'D' && select_key != '*' && select_key != '#')
+    //Check select_key is number0-9
     {
-
-      String text = "/nowsnack/s" + String(key);
-      Serial.println(text);
-
-      if (Firebase.getInt(firebaseData, "/nowsnack/s" + String(key)))
+      //String text = "/nowsnack/s" + String(key);
+      //Serial.println(text); //Debug
+      if (Firebase.getInt(firebaseData, "/nowsnack/s" + String(select_key) + "/amount")) //Check Firebase get nowsnack
       {
-        
-        int nowsnacknum = firebaseData.intData();
-        Serial.println(firebaseData.intData());
+        int amount = firebaseData.intData();
       SELECTNUMOFSNACK:
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("Number of sweets");
         lcd.setCursor(0, 1);
-        lcd.print(nowsnacknum);
+        lcd.print(amount);
+        lcd.setCursor(3, 1);
+        lcd.print("Price left");
+        lcd.setCursor(0, 3);
+        lcd.print("[*]Back");
         Serial.println("Number of sweets");
-        key = NULL;
-        char key = customKeypad.waitForKey();
-        Serial.println(key);
-        if (key != 'A' && key != 'B' && key != 'C' && key != 'D' && key != '*' && key != '#' && key != '0')
+        Serial.println(firebaseData.intData());
+        //key = NULL;
+        char nos_key = customKeypad.waitForKey();
+        Serial.println(nos_key);
+        if (nos_key != 'A' && nos_key != 'B' && nos_key != 'C' && nos_key != 'D' && nos_key != '#' && nos_key != '0')
         {
-          int keyy = key-48;
-          Serial.println(keyy);
-          if (keyy <= nowsnacknum)
+          int i_nos_key = (int)nos_key - 48;
+          //Serial.println(i_nos_key); //debug
+          if (i_nos_key <= amount) //เช็คว่ามีขนมพอไหม?
           {
-            lcd.clear();
-            lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
-            lcd.print("Success");
-            delay(1000);
+
+            nowbuy.set("s" + String(select_key) + "/amount", i_nos_key);
+
+            if (Firebase.setJSON(firebaseData, "/nowbuy", nowbuy)) // อัพลงfirebase
+            {
+              lcd.clear();
+              lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
+              lcd.print("Success!");
+              Serial.println("Success!");
+              delay(1000);
+            }
+            else //ถ้าอัพลงไม่ได้
+            {
+              lcd.clear();
+              lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
+              lcd.print(" FireBase Error ");
+              Serial.println("Error : " + firebaseData.errorReason());
+              delay(2000);
+              goto WELLCOME;
+            }
           }
-          else
+          else //ถ้ามีขนมไม่พอ
           {
             lcd.clear();
             lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
@@ -250,17 +270,17 @@ WELLCOME:
 
         //Serial.println(firebaseData.intData());
       }
-      else
+      else //ถ้า ไม่เจอข้อมูลหรือ เกิด error ให้ โชวerror
       {
         lcd.clear();
         lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
-        lcd.print("FireBase Error");
+        lcd.print(" FireBase Error ");
         Serial.println("Error : " + firebaseData.errorReason());
         delay(2000);
         goto WELLCOME;
       }
     }
-    else if (key == '*')
+    else if (select_key == '*')
     {
       goto WELLCOME;
     }
@@ -268,44 +288,12 @@ WELLCOME:
     {
       lcd.clear();
       lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
-      lcd.print("Enter 1-9");
-      Serial.println("Enter 1-9");
+      lcd.print("Enter 0-9");
+      Serial.println("Enter 0-9");
       delay(1000);
       goto SELECTSNACK;
     }
-
-    //char num = customKeypad.waitForKey();
   }
-
-  //delay(100);
-
-  /*char key = customKeypad.getKey();
-  if (key)
-  {
-    key = NULL;
-    lcd.clear();
-    lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
-    lcd.print("Select Snack");
-    Serial.println("Select Snack");
-
-    //Serial.println(key);
-    while (key != '*')
-    {
-      key = customKeypad.getKey();
-      if (key)
-      {
-        snack1 = key;
-        lcd.setCursor(0, 1); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
-        lcd.print(snack1);
-        Serial.println(key);
-        //break;
-      }
-
-      client.loop();
-      delay(50);
-    }
-    Serial.println(key);
-  }*/
 
   client.loop();
 }

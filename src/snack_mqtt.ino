@@ -20,6 +20,7 @@
 
 //Define Firebase Data object
 FirebaseData firebaseData;
+FirebaseData data_nowsnack;
 FirebaseJson nowbuy;
 
 // Config Wifi
@@ -27,7 +28,7 @@ const char *ssid = "Room215";
 const char *password = "248163264";
 
 // Config MQTT Server
-const char *topic = "/server";              // topic ชื่อ /server
+const char *topic = "/server/qrtext";              // topic ชื่อ /server
 #define mqtt_server "soldier.cloudmqtt.com" // Server MQTT
 #define mqtt_port 11970                     // Port MQTT
 #define mqtt_user "snackvending"            // Username
@@ -131,6 +132,7 @@ void setup()
 void loop()
 {
 WELLCOME:
+
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Snack VendingMachine");
@@ -155,7 +157,9 @@ WELLCOME:
     Serial.print("Attempting MQTT connection...");
     if (client.connect("ESP8266Client", mqtt_user, mqtt_password))
     {
-      client.subscribe(topic); // ชื่อ topic ที่ต้องการติดตาม
+      client.subscribe(topic);            // ชื่อ topic ที่ต้องการติดตาม
+      client.subscribe("/server/qrtext"); // ชื่อ topic ที่ต้องการติดตาม
+      //client.subscribe(topic); // ชื่อ topic ที่ต้องการติดตาม
       Serial.println("connected");
       lcd.setCursor(0, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
       lcd.print("STATUS : OK!");
@@ -176,24 +180,30 @@ WELLCOME:
   else
   {
     Serial.println("connected");
-    lcd.setCursor(0, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
+    lcd.setCursor(0, 2);
     lcd.print("STATUS : OK!");
   }
+
+  Firebase.deleteNode(firebaseData, "/nowbuy/");
+  Firebase.getJSON(data_nowsnack, "/nowsnack");
+  FirebaseJson &json_nowsnack = data_nowsnack.jsonObject();
+  FirebaseJsonData jsondata_nowsnack;
+
   lcd.setCursor(0, 3); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
   lcd.print("Press # to Order");
 
-  Firebase.deleteNode(firebaseData, "/nowbuy/");
   char key = customKeypad.waitForKey();
   Serial.println(key);
   if (key == '#')
   {
     //prepare
-
+    nowbuy.clear(); //clear jsonnowbuy
   SELECTSNACK:
     lcd.clear();
-    lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
+    lcd.setCursor(0, 0);
     lcd.print("Select Snack");
     lcd.setCursor(0, 3);
+    //lcd.
     lcd.print("[*]Back");
     Serial.print("Select Snack");
     //key = NULL;
@@ -205,68 +215,165 @@ WELLCOME:
       //String text = "/nowsnack/s" + String(key);
       //Serial.println(text); //Debug
       //FETCH DATA TO JSON
-      if (Firebase.getJSON(firebaseData, "/nowsnack"))
-      {
-        FirebaseJson &json = firebaseData.jsonObject();
-        FirebaseJsonData data;
-        json.get(data, "/s" + String(select_key) + "/amount");
-        int amount = data.intValue;
-        json.get(data, "/s" + String(select_key) + "/price");
-        int price = data.intValue;
-      SELECTNUMOFSNACK:
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Enter Amount");
-        lcd.setCursor(2, 1);
-        lcd.print(amount);
-        lcd.setCursor(5, 1);
-        lcd.print("Price left");
-        lcd.setCursor(2, 2);
-        lcd.print(price);
-        lcd.setCursor(5, 2);
-        lcd.print("Bath/Price");
+      json_nowsnack.get(jsondata_nowsnack, "/s" + String(select_key) + "/amount");
+      int amount = jsondata_nowsnack.intValue;
+      json_nowsnack.get(jsondata_nowsnack, "/s" + String(select_key) + "/price");
+      int price = jsondata_nowsnack.intValue;
+    SELECTNUMOFSNACK:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Enter Amount");
+      lcd.setCursor(2, 1);
+      lcd.print(amount);
+      lcd.setCursor(5, 1);
+      lcd.print("Price left");
+      lcd.setCursor(2, 2);
+      lcd.print(price);
+      lcd.setCursor(5, 2);
+      lcd.print("Bath/Price");
 
-        lcd.setCursor(0, 3);
-        lcd.print("[*]Back");
-        //Serial.print("now_amount");
-        Serial.print(amount);
-        //Serial.print("now_price");
-        Serial.print(price);
-        //key = NULL;
-        char nos_key = customKeypad.waitForKey(); //รอรับค่า จำนวนขนมที่ลูกค้าต้องการ
-        Serial.println(nos_key);
-        if (nos_key != 'A' && nos_key != 'B' && nos_key != 'C' && nos_key != 'D' && nos_key != '*' && nos_key != '#' && nos_key != '0')
+      lcd.setCursor(0, 3);
+      lcd.print("[*]Back");
+      //Serial.print("now_amount");
+      Serial.print(amount);
+      //Serial.print("now_price");
+      Serial.print(price);
+      //key = NULL;
+      char nos_key = customKeypad.waitForKey(); //รอรับค่า จำนวนขนมที่ลูกค้าต้องการ
+      Serial.println(nos_key);
+      if (nos_key != 'A' && nos_key != 'B' && nos_key != 'C' && nos_key != 'D' && nos_key != '*' && nos_key != '#' && nos_key != '0')
+      {
+        int i_nos_key = (int)nos_key - 48;
+        //Serial.println(i_nos_key); //debug
+        if (i_nos_key <= amount) //เช็คว่ามีขนมพอไหม?
         {
-          int i_nos_key = (int)nos_key - 48;
-          //Serial.println(i_nos_key); //debug
-          if (i_nos_key <= amount) //เช็คว่ามีขนมพอไหม?
+
+          int cost = (i_nos_key * price);
+          nowbuy.set("s" + String(select_key) + "/amount", i_nos_key); //set amount = key
+          nowbuy.set("s" + String(select_key) + "/cost", cost);
+
+        CONFIRM:
+          int total_buy = 0;
+          FirebaseJsonData data_nowbuy;
+          for (unsigned int j = 0; j <= 9; j++)
           {
-            if (Firebase.setInt(firebaseData, "/nowbuy/s" + String(select_key) + "/amount", i_nos_key))
+            nowbuy.get(data_nowbuy, "/s" + String(j) + "/cost");
+            total_buy += data_nowbuy.intValue;
+            nowbuy.set("/total_buy", total_buy);
+          }
+
+          /*if (Firebase.getJSON(firebaseData, "/nowbuy"))
+          {
+            FirebaseJson &json = firebaseData.jsonObject();
+            FirebaseJsonData data_nowbuy;
+
+            for (size_t j = 0; j <= 9; j++)
+            {
+              json.get(data_nowbuy, "/s" + String(j) + "/cost");
+              total_buy += data_nowbuy.intValue;
+            }
+          }
+          else
+          {
+            lcd.clear();
+            lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
+            lcd.print(" FireBase Error ");
+            Serial.println("Error : " + firebaseData.errorReason());
+            delay(2000);
+            goto WELLCOME;
+          }*/
+
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Total : ");
+          lcd.setCursor(8, 0);
+          lcd.print(total_buy);
+          lcd.setCursor(12, 0);
+          lcd.print("Bath.");
+          lcd.setCursor(0, 1);
+          lcd.print("[A]BuyMore/Change");
+          lcd.setCursor(0, 2);
+          lcd.print("[B]CheckOrder");
+          lcd.setCursor(0, 3);
+          lcd.print("[*]Cancel [#]Confirm");
+          char confirm_key = customKeypad.waitForKey(); //รอรับค่า
+          Serial.println(confirm_key);
+          if (confirm_key == '*')
+          {
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print("Order canceled!");
+            if (Firebase.deleteNode(firebaseData, "/nowbuy/"))
+            {
+              Serial.println("Deleted");
+            }
+            else
+            {
+              Serial.println("Error : " + firebaseData.errorReason());
+            }
+            goto WELLCOME;
+          }
+          else if (confirm_key == 'A')
+          {
+            goto SELECTSNACK;
+          }
+          else if (confirm_key == 'B')
+          {
+          CHECKORDER:
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            for (size_t i = 0; i <= 4; i++)
+            {
+              nowbuy.get(data_nowbuy, "/s" + String(i) + "/amount");
+              String text = ":" + String(data_nowbuy.intValue) + " ";
+              lcd.print(i);
+              lcd.print(text);
+            }
+            lcd.setCursor(0, 1);
+            for (size_t i = 5; i <= 9; i++)
+            {
+              nowbuy.get(data_nowbuy, "/s" + String(i) + "/amount");
+              String text = ":" + String(data_nowbuy.intValue) + " ";
+              lcd.print(i);
+              lcd.print(text);
+            }
+            lcd.setCursor(0, 3);
+            lcd.print("[*]Back ");
+            char close_key = customKeypad.waitForKey();
+            if (close_key != '*')
             {
               lcd.clear();
               lcd.setCursor(0, 0);
-              lcd.print("Please wait!");
-              Serial.println("Success!");
-              int cost = (i_nos_key * price);
-              Firebase.setInt(firebaseData, "/nowbuy/s" + String(select_key) + "/cost", cost);
-              delay(1000);
+              lcd.print("Entered incorrectly!");
+              delay(500);
+              goto CHECKORDER;
             }
-
-            //nowbuy.set("s" + String(select_key) + "/amount", i_nos_key); //set amount = key
-            //nowbuy.clear();
-            //FirebaseJson data_test;
-            //nowbuy.get(data_test,"",)
-
-            /*if (Firebase.setJSON(firebaseData, "/nowbuy", nowbuy)) // อัพลงfirebase
+            else
+            {
+              goto CONFIRM;
+            }
+          }
+          else if (confirm_key == '#') //ถ้ากดปุ่ม#หลังจากConfirm
+          {
+            if (Firebase.setJSON(firebaseData, "/nowbuy", nowbuy))
             {
               lcd.clear();
               lcd.setCursor(0, 0);
               lcd.print("Success!");
               Serial.println("Success!");
-              delay(1000);
-            }*/
 
-            else //ถ้าอัพลงไม่ได้
+              String s_totalbuy = String(total_buy);
+              unsigned int str_len = s_totalbuy.length() + 1;
+              char c_totalbuy[str_len];
+              s_totalbuy.toCharArray(c_totalbuy, str_len);
+              client.publish("/NodeMCU/cost", c_totalbuy);
+              Serial.println("cost publish!");
+              delay(2000);
+              client.loop();
+              delay(50);
+              char close_key = customKeypad.waitForKey();
+            }
+            else
             {
               lcd.clear();
               lcd.setCursor(0, 0);
@@ -274,112 +381,39 @@ WELLCOME:
               Serial.println("Error : " + firebaseData.errorReason());
               delay(2000);
               goto WELLCOME;
-            }
-
-          CONFIRM:
-            int total_buy = 0;
-            if (Firebase.getJSON(firebaseData, "/nowbuy"))
-            {
-              FirebaseJsonData data_nowbuy;
-              for (size_t j = 0; j <= 9; j++)
-              {
-                json.get(data_nowbuy, "/s" + String(j) + "/cost");
-                total_buy += data_nowbuy.intValue;
-              }
-              //Firebase.setInt(firebaseData, "/nowbuy/total_buy", total_buy);
-              //int total_buy = 0;
-            }
-            else
-            {
-              lcd.clear();
-              lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
-              lcd.print(" FireBase Error ");
-              Serial.println("Error : " + firebaseData.errorReason());
-              delay(2000);
-              goto WELLCOME;
-            }
-
-            lcd.clear();
-            lcd.setCursor(0, 0);
-            lcd.print("Total : ");
-            lcd.setCursor(8, 0);
-            lcd.print(total_buy);
-            lcd.setCursor(12, 0);
-            lcd.print("Bath.");
-            lcd.setCursor(0, 1);
-            lcd.print("[A]BuyMore/Change");
-            lcd.setCursor(0, 2);
-            lcd.print("[B]CheckOrder");
-            lcd.setCursor(0, 3);
-            lcd.print("[*]Cancel [#]Confirm");
-            char confirm_key = customKeypad.waitForKey(); //รอรับค่า
-            Serial.println(confirm_key);
-            if (confirm_key == '*')
-            {
-              lcd.clear();
-              lcd.setCursor(0, 0);
-              lcd.print("Order canceled!");
-              if (Firebase.deleteNode(firebaseData, "/nowbuy/"))
-              {
-                Serial.println("Deleted");
-              }
-              else
-              {
-                Serial.println("Error : " + firebaseData.errorReason());
-              }
-              goto WELLCOME;
-            }
-            else if (confirm_key == 'A')
-            {
-              goto SELECTSNACK;
-            }
-            else if (confirm_key == '#')
-            {
-              /* code */
-            }
-            else
-            {
-              lcd.clear();
-              lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
-              lcd.print("Entered incorrectly!");
-              Serial.println("Enter A*#");
-              //delay(500);
-              goto CONFIRM;
             }
           }
-          else //ถ้ามีขนมไม่พอ
+          else //ถ้าพิมนอกจาก A,B,*,#
           {
             lcd.clear();
-            lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
-            lcd.print("Not enought");
-            delay(1000);
-            goto SELECTSNACK;
+            lcd.setCursor(0, 0);
+            lcd.print("Entered incorrectly!");
+            Serial.println("Enter AB*#");
+            delay(500);
+            goto CONFIRM;
           }
         }
-        else if (nos_key == '*')
-        {
-          goto SELECTSNACK;
-        }
-        else
+        else //ถ้ามีขนมไม่พอ
         {
           lcd.clear();
           lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
-          lcd.print("Enter 1-9");
-          Serial.println("Enter 1-9");
+          lcd.print("Not enought");
           delay(1000);
           goto SELECTNUMOFSNACK;
         }
-
-        // Do something
+      }
+      else if (nos_key == '*')
+      {
+        goto SELECTSNACK;
       }
       else
       {
         lcd.clear();
         lcd.setCursor(0, 0); // ไปที่ตัวอักษรที่ 0 แถวที่ 1
-        lcd.print(" FireBase Error ");
-        Serial.println("Error : " + firebaseData.errorReason());
-        delay(2000);
-        goto WELLCOME;
+        lcd.print("Enter 1-9");
+        Serial.println("Enter 1-9");
+        delay(1000);
+        goto SELECTNUMOFSNACK;
       }
     }
     else if (select_key == '*')
@@ -406,7 +440,7 @@ void callback(char *topic, byte *payload, unsigned int length)
   Serial.print(topic);
   Serial.print("] ");
   String msg = "";
-  int i = 0;
+  unsigned int i = 0;
   while (i < length)
   {
     msg += (char)payload[i++];
@@ -414,13 +448,18 @@ void callback(char *topic, byte *payload, unsigned int length)
   Serial.print("receive ");
   Serial.println(msg); // แสดงข้อความที่ได้รับจาก topic
 
+  if (strcmp(topic, "/server/qrtext") == 0)
+  {
+    Serial.println(msg);
+  }
+
   if (msg != "0")
   {
     int roundd = msg.toInt();
     step(HIGH, STEP_0, roundd); // Set the spinning direction clockwise:
     delay(100);
     client.publish("/NodeMCU", "STEPED!"); // ส่งข้อความกลับไปที่ topic คือ ชื่ออุปกรณ์ที่ส่ง , ข้อความ
-    Serial.println("Publish !");
+    Serial.println("OKKK!");
     return;
   }
 }

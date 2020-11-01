@@ -17,6 +17,16 @@
 #include <Keypad.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+// MCP23017
+#include "Adafruit_MCP23017.h"
+Adafruit_MCP23017 mcp;
+
+//SDCARDPLAYER
+#include "SoftwareSerial.h"
+#include "DFRobotDFPlayerMini.h"
+SoftwareSerial mySoftwareSerial(D5, D6); // RX, TX
+DFRobotDFPlayerMini myDFPlayer;
+void printDetail(uint8_t type, int value);
 
 //Define Firebase Data object
 FirebaseData firebaseData;
@@ -28,7 +38,7 @@ const char *ssid = "Room215";
 const char *password = "248163264";
 
 // Config MQTT Server
-const char *topic = "/server/qrtext";              // topic ชื่อ /server
+//const char *topic = "/server/qrtext";       // topic ชื่อ /server
 #define mqtt_server "soldier.cloudmqtt.com" // Server MQTT
 #define mqtt_port 11970                     // Port MQTT
 #define mqtt_user "snackvending"            // Username
@@ -37,7 +47,7 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 // Config KEYPAD
-#define I2CADDR 0x20 // addressของkeypad
+#define I2CADDR 0x24 // addressของkeypad
 char hexaKeys[4][4] = {
     {'1', '2', '3', 'A'},
     {'4', '5', '6', 'B'},
@@ -57,28 +67,63 @@ QRcode qrcode(&display);
 LiquidCrystal_I2C lcd(0x3f, 20, 4);
 
 // Config Stepmotor
-#define DIR D3
-#define STEP_0 D4
-#define ENMOTOR D5
 #define SPR 200 //stepsPerRevolution = 200
+#define EN_MOTOR 10
+#define DIR_MOTOR 11
+
+bool qr_confirm;
 
 void setup()
 {
   // Declare pins as output:
-  pinMode(ENMOTOR, OUTPUT);
-  digitalWrite(ENMOTOR, HIGH);
-  pinMode(STEP_0, OUTPUT);
-  pinMode(DIR, OUTPUT);
+  //pinMode(ENMOTOR, OUTPUT);
+  //digitalWrite(ENMOTOR, HIGH);
+  //pinMode(STEP_0, OUTPUT);
+  //pinMode(DIR, OUTPUT);
   delay(10);
-
   Serial.begin(115200);
   Serial.println("");
   Serial.println("Starting...");
   delay(10);
 
+  //Setup DF player
+  mySoftwareSerial.begin(9600);
+  delay(100);
+  if (!myDFPlayer.begin(mySoftwareSerial))
+  { //Use softwareSerial to communicate with mp3.
+    Serial.println(F("Unable to begin:"));
+    Serial.println(F("1.Please recheck the connection!"));
+    Serial.println(F("2.Please insert the SD card!"));
+    //while (true);
+  }
+  delay(10);
+  Serial.println(F("DFPlayer Mini online."));
+  myDFPlayer.setTimeOut(500); //Set serial communictaion time out 500ms
+  myDFPlayer.volume(30);      //Set volume value (0~30).
+  myDFPlayer.EQ(DFPLAYER_EQ_NORMAL);
+  myDFPlayer.outputDevice(DFPLAYER_DEVICE_SD);
+  //myDFPlayer.enableDAC();  //Enable On-chip DAC
+  //----Mp3 play----
+  //Serial.println(F("play prated gu me"));
+  //myDFPlayer.play(2); //Play the first mp3
+  delay(100);
+  if (myDFPlayer.available())
+  {
+    printDetail(myDFPlayer.readType(), myDFPlayer.read()); //Print the detail message from DFPlayer to handle different errors and states.
+  }
+
   // Setup Keypad
   Wire.begin();         // GDY200622
   customKeypad.begin(); // GDY120705
+  mcp.begin();          // use default address 0 = 0x21
+  for (size_t i = 0; i < 10; i++)
+  {
+    mcp.pinMode(i, OUTPUT);
+    //mcp.digitalWrite(i, LOW);
+  }
+  mcp.pinMode(EN_MOTOR, OUTPUT);    //10
+  mcp.pinMode(DIR_MOTOR, OUTPUT);   // 11
+  mcp.digitalWrite(EN_MOTOR, HIGH); // 10 มอเตอร์ active low
 
   // Setup SSD1306
   display.init(); //oled
@@ -125,15 +170,19 @@ void setup()
   Firebase.reconnectWiFi(true);
 
   // Setup MQTT
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(callback); // สร้างฟังก์ชันเมื่อมีการติดต่อจาก mqtt มา
+  client.setServer(mqtt_server, mqtt_port); // เชื่อมต่อ mqtt server
+  client.setCallback(callback);             // สร้างฟังก์ชันเมื่อมีการติดต่อจาก mqtt มา
 }
 
 void loop()
 {
 WELLCOME:
-
+  myDFPlayer.play(1);
+  Serial.println("welcome !!");
   lcd.clear();
+  display.clear();
+  display.display();
+  //qrcode.init();
   lcd.setCursor(0, 0);
   lcd.print("Snack VendingMachine");
   lcd.setCursor(0, 1);
@@ -151,18 +200,18 @@ WELLCOME:
     lcd.setCursor(5, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
     lcd.print(" NO!");
   }*/
-
+  Serial.print("client.connected = ");
+  Serial.println(client.connected());
   if (!client.connected())
   {
     Serial.print("Attempting MQTT connection...");
     if (client.connect("ESP8266Client", mqtt_user, mqtt_password))
     {
-      client.subscribe(topic);            // ชื่อ topic ที่ต้องการติดตาม
       client.subscribe("/server/qrtext"); // ชื่อ topic ที่ต้องการติดตาม
       //client.subscribe(topic); // ชื่อ topic ที่ต้องการติดตาม
-      Serial.println("connected");
+      Serial.println("connected_first");
       lcd.setCursor(0, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
-      lcd.print("STATUS : OK!");
+      lcd.print("STATUS : READY!");
     }
     else
     { // ในกรณีเชื่อมต่อ mqtt ไม่สำเร็จ
@@ -199,6 +248,7 @@ WELLCOME:
     //prepare
     nowbuy.clear(); //clear jsonnowbuy
   SELECTSNACK:
+    myDFPlayer.play(2);
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Select Snack");
@@ -220,9 +270,10 @@ WELLCOME:
       json_nowsnack.get(jsondata_nowsnack, "/s" + String(select_key) + "/price");
       int price = jsondata_nowsnack.intValue;
     SELECTNUMOFSNACK:
+      myDFPlayer.play(3);
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Enter Amount");
+      lcd.print("Choose Amount");
       lcd.setCursor(2, 1);
       lcd.print(amount);
       lcd.setCursor(5, 1);
@@ -357,20 +408,28 @@ WELLCOME:
           {
             if (Firebase.setJSON(firebaseData, "/nowbuy", nowbuy))
             {
+              myDFPlayer.play(4);
               lcd.clear();
               lcd.setCursor(0, 0);
-              lcd.print("Success!");
-              Serial.println("Success!");
+              lcd.print("Processing!");
+              Serial.println("Processing!");
 
               String s_totalbuy = String(total_buy);
               unsigned int str_len = s_totalbuy.length() + 1;
               char c_totalbuy[str_len];
               s_totalbuy.toCharArray(c_totalbuy, str_len);
+
+              reconnect_mqtt();
+
               client.publish("/NodeMCU/cost", c_totalbuy);
               Serial.println("cost publish!");
-              delay(2000);
-              client.loop();
-              delay(50);
+              
+              do
+              {
+                qr_confirm = false;
+                client.loop();
+              } while (qr_confirm == false);
+              step(HIGH, 0, 1); // clockwise, number, round
               char close_key = customKeypad.waitForKey();
             }
             else
@@ -431,7 +490,17 @@ WELLCOME:
     }
   }
 
-  client.loop();
+  /*while (client.connected())
+  {
+    client.loop();
+    Serial.print("client.connected = ");
+    Serial.println(client.connected());
+    //Serial.print("client.loop return = ");
+    Serial.println(client.loop());
+    delay(1000);
+  }*/
+
+  Serial.println("end program");
 }
 
 void callback(char *topic, byte *payload, unsigned int length)
@@ -450,37 +519,130 @@ void callback(char *topic, byte *payload, unsigned int length)
 
   if (strcmp(topic, "/server/qrtext") == 0)
   {
-    Serial.println(msg);
+    //Serial.println(msg);
+    qr_confirm = true;
+    qrcode.create(msg);
   }
 
-  if (msg != "0")
+  /*if (msg != "0")
   {
     int roundd = msg.toInt();
-    step(HIGH, STEP_0, roundd); // Set the spinning direction clockwise:
+    //step(HIGH, STEP_0, roundd); // Set the spinning direction clockwise:
     delay(100);
     client.publish("/NodeMCU", "STEPED!"); // ส่งข้อความกลับไปที่ topic คือ ชื่ออุปกรณ์ที่ส่ง , ข้อความ
     Serial.println("OKKK!");
     return;
-  }
+  }*/
 }
 
-void step(boolean directionz, byte stepperPin, int steps)
+void step(boolean dir, byte stepperPin, int steps)
 {
-  digitalWrite(ENMOTOR, LOW); // เปิดให้มอเตอร์ทำงาน
-  digitalWrite(DIR, directionz);
+  mcp.digitalWrite(EN_MOTOR, LOW); // เปิดให้มอเตอร์ทำงาน
+  mcp.digitalWrite(DIR_MOTOR, dir);
   delay(100);
   //int roundd = steps * 200;
   for (int j = 0; j < steps; j++)
   {
     for (int i = 0; i < SPR; i++)
     {
-      digitalWrite(stepperPin, HIGH);
-      delayMicroseconds(1800);
-      digitalWrite(stepperPin, LOW);
-      delayMicroseconds(1800);
+      mcp.digitalWrite(stepperPin, HIGH);
+      delayMicroseconds(3000);
+      mcp.digitalWrite(stepperPin, LOW);
+      delayMicroseconds(3000);
     }
     delay(500);
   }
   delay(100);
-  digitalWrite(ENMOTOR, HIGH); // ปิดมอเตอร์
+  mcp.digitalWrite(EN_MOTOR, HIGH); // ปิดมอเตอร์
+}
+
+void printDetail(uint8_t type, int value)
+{
+  switch (type)
+  {
+  case TimeOut:
+    Serial.println(F("Time Out!"));
+    break;
+  case WrongStack:
+    Serial.println(F("Stack Wrong!"));
+    break;
+  case DFPlayerCardInserted:
+    Serial.println(F("Card Inserted!"));
+    break;
+  case DFPlayerCardRemoved:
+    Serial.println(F("Card Removed!"));
+    break;
+  case DFPlayerCardOnline:
+    Serial.println(F("Card Online!"));
+    break;
+  case DFPlayerUSBInserted:
+    Serial.println("USB Inserted!");
+    break;
+  case DFPlayerUSBRemoved:
+    Serial.println("USB Removed!");
+    break;
+  case DFPlayerPlayFinished:
+    Serial.print(F("Number:"));
+    Serial.print(value);
+    Serial.println(F(" Play Finished!"));
+    break;
+  case DFPlayerError:
+    Serial.print(F("DFPlayerError:"));
+    switch (value)
+    {
+    case Busy:
+      Serial.println(F("Card not found"));
+      break;
+    case Sleeping:
+      Serial.println(F("Sleeping"));
+      break;
+    case SerialWrongStack:
+      Serial.println(F("Get Wrong Stack"));
+      break;
+    case CheckSumNotMatch:
+      Serial.println(F("Check Sum Not Match"));
+      break;
+    case FileIndexOut:
+      Serial.println(F("File Index Out of Bound"));
+      break;
+    case FileMismatch:
+      Serial.println(F("Cannot Find File"));
+      break;
+    case Advertise:
+      Serial.println(F("In Advertise"));
+      break;
+    default:
+      break;
+    }
+    break;
+  default:
+    break;
+  }
+}
+
+void reconnect_mqtt()
+{
+  if (!client.connected())
+  {
+    Serial.print("Re connecting...");
+    if (client.connect("ESP8266Client", mqtt_user, mqtt_password))
+    {
+      client.subscribe("/server/qrtext"); // ชื่อ topic ที่ต้องการติดตาม
+      //client.subscribe(topic); // ชื่อ topic ที่ต้องการติดตาม
+      Serial.println("reconnected!");
+    }
+    else
+    { // ในกรณีเชื่อมต่อ mqtt ไม่สำเร็จ
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      delay(5000); // หน่วงเวลา 5 วินาที แล้วลองใหม่
+      return;
+    }
+  }
+  else
+  {
+    //client.loop();
+    Serial.println("You are connected");
+  }
 }

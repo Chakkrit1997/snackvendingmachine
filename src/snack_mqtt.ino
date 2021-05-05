@@ -72,6 +72,7 @@ LiquidCrystal_I2C lcd(0x3f, 20, 4);
 #define DIR_MOTOR 11
 
 bool qr_confirm;
+bool snack_confirm;
 
 void setup()
 {
@@ -121,9 +122,9 @@ void setup()
     mcp.pinMode(i, OUTPUT);
     //mcp.digitalWrite(i, LOW);
   }
-  mcp.pinMode(EN_MOTOR, OUTPUT);    //10
-  mcp.pinMode(DIR_MOTOR, OUTPUT);   // 11
-  mcp.digitalWrite(EN_MOTOR, HIGH); // 10 มอเตอร์ active low
+  mcp.pinMode(EN_MOTOR, OUTPUT);    // ขา 10
+  mcp.pinMode(DIR_MOTOR, OUTPUT);   // ขา 11
+  mcp.digitalWrite(EN_MOTOR, HIGH); // สั่งขา 10 มอเตอร์ active low
 
   // Setup SSD1306
   display.init(); //oled
@@ -207,9 +208,11 @@ WELLCOME:
     Serial.print("Attempting MQTT connection...");
     if (client.connect("ESP8266Client", mqtt_user, mqtt_password))
     {
-      client.subscribe("/server/qrtext"); // ชื่อ topic ที่ต้องการติดตาม
-      //client.subscribe(topic); // ชื่อ topic ที่ต้องการติดตาม
-      Serial.println("connected_first");
+      client.subscribe("/server/qrtext");          // ชื่อ topic ที่ต้องการติดตาม
+      client.subscribe("/NodeMCU/promptpaycheck"); // ชื่อ topic ที่ต้องการติดตาม
+      client.subscribe("/motor");                  // ชื่อ topic ที่ต้องการติดตาม
+
+      Serial.println("First connection");
       lcd.setCursor(0, 2); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
       lcd.print("STATUS : READY!");
     }
@@ -234,9 +237,9 @@ WELLCOME:
   }
 
   Firebase.deleteNode(firebaseData, "/nowbuy/");
-  Firebase.getJSON(data_nowsnack, "/nowsnack");
-  FirebaseJson &json_nowsnack = data_nowsnack.jsonObject();
-  FirebaseJsonData jsondata_nowsnack;
+  // Firebase.getJSON(data_nowsnack, "/nowsnack");
+  // FirebaseJson &json_nowsnack = data_nowsnack.jsonObject();
+  // FirebaseJsonData jsondata_nowsnack;
 
   lcd.setCursor(0, 3); // ไปที่ตัวอักษรที่ 6 แถวที่ 2
   lcd.print("Press # to Order");
@@ -253,7 +256,6 @@ WELLCOME:
     lcd.setCursor(0, 0);
     lcd.print("Select Snack");
     lcd.setCursor(0, 3);
-    //lcd.
     lcd.print("[*]Back");
     Serial.print("Select Snack");
     //key = NULL;
@@ -265,10 +267,37 @@ WELLCOME:
       //String text = "/nowsnack/s" + String(key);
       //Serial.println(text); //Debug
       //FETCH DATA TO JSON
-      json_nowsnack.get(jsondata_nowsnack, "/s" + String(select_key) + "/amount");
-      int amount = jsondata_nowsnack.intValue;
-      json_nowsnack.get(jsondata_nowsnack, "/s" + String(select_key) + "/price");
-      int price = jsondata_nowsnack.intValue;
+      // json_nowsnack.get(jsondata_nowsnack, "/s" + String(select_key) + "/amount");
+      // int amount = jsondata_nowsnack.intValue;
+      // json_nowsnack.get(jsondata_nowsnack, "/s" + String(select_key) + "/price");
+      // int price = jsondata_nowsnack.intValue;
+
+      int amount = 0;
+      int price = 0;
+
+      if (Firebase.getString(firebaseData, "/nowsnack/s" + String(select_key) + "/amount"))
+      {
+        String am = firebaseData.stringData();
+        amount = am.toInt();
+        // Do something
+      }
+      else
+      {
+        Serial.println("Error : " + firebaseData.errorReason());
+        goto WELLCOME;
+      }
+      if (Firebase.getString(firebaseData, "/nowsnack/s" + String(select_key) + "/price"))
+      {
+        String pr = firebaseData.stringData();
+        price = pr.toInt();
+        // Do something
+      }
+      else
+      {
+        Serial.println("Error : " + firebaseData.errorReason());
+        goto WELLCOME;
+      }
+
     SELECTNUMOFSNACK:
       myDFPlayer.play(3);
       lcd.clear();
@@ -301,14 +330,15 @@ WELLCOME:
 
           int cost = (i_nos_key * price);
           nowbuy.set("s" + String(select_key) + "/amount", i_nos_key); //set amount = key
-          nowbuy.set("s" + String(select_key) + "/cost", cost);
+          nowbuy.set("s" + String(select_key) + "/price", cost);
 
         CONFIRM:
           int total_buy = 0;
           FirebaseJsonData data_nowbuy;
           for (unsigned int j = 0; j <= 9; j++)
-          {
-            nowbuy.get(data_nowbuy, "/s" + String(j) + "/cost");
+          { // วนลูปรวมราคา
+
+            nowbuy.get(data_nowbuy, "/s" + String(j) + "/price");
             total_buy += data_nowbuy.intValue;
             nowbuy.set("/total_buy", total_buy);
           }
@@ -406,13 +436,12 @@ WELLCOME:
           }
           else if (confirm_key == '#') //ถ้ากดปุ่ม#หลังจากConfirm
           {
-            if (Firebase.setJSON(firebaseData, "/nowbuy", nowbuy))
+            if (Firebase.setJSON(firebaseData, "/nowbuy", nowbuy)) //ถ้า นำข้อมูลเข้า Firebaseได้
             {
-              myDFPlayer.play(4);
               lcd.clear();
               lcd.setCursor(0, 0);
-              lcd.print("Processing!");
-              Serial.println("Processing!");
+              lcd.print("Get QR Code .."); // รอ qr code
+              Serial.println("GET QR code!");
 
               String s_totalbuy = String(total_buy);
               unsigned int str_len = s_totalbuy.length() + 1;
@@ -420,17 +449,41 @@ WELLCOME:
               s_totalbuy.toCharArray(c_totalbuy, str_len);
 
               reconnect_mqtt();
-
               client.publish("/NodeMCU/cost", c_totalbuy);
-              Serial.println("cost publish!");
-              
+              Serial.println("ส่งราคาไปให้ server รอรหัส qrcode");
+
               do
               {
                 qr_confirm = false;
                 client.loop();
-              } while (qr_confirm == false);
-              step(HIGH, 0, 1); // clockwise, number, round
-              char close_key = customKeypad.waitForKey();
+              } while (qr_confirm == false); //เมื่อ server ส่ง payload กลับมา
+
+              myDFPlayer.play(5);
+              //lcd.clear();
+              lcd.setCursor(0, 1);
+              lcd.print("Scan QR code...");
+              Serial.println("รอลูกค้าแสกน");
+
+              reconnect_mqtt();                                       // reconnect ก่อนจะส่งข้อความ
+              client.publish("/NodeMCU/promptpaycheck", "doconfirm"); // ส่งข้อความกลับไปที่ topic คือ ชื่ออุปกรณ์ที่ส่ง , ข้อความ
+              Serial.println("ส่งข้อความ doconfirm ไปให้ api รอยินยัน!");
+
+              do
+              {
+                snack_confirm = false;
+                client.loop();
+              } while (snack_confirm == false); // เมื่อยินยันชำระเงินเสร็จ
+
+              //lcd.clear();
+              lcd.setCursor(0, 3);
+              lcd.print("Transaction END");
+              Serial.println("Successful transaction"); //เมื่อชำระเงินเสร็จ
+
+              delay(5000);
+              goto WELLCOME;
+
+              //step(HIGH, 0, 1); // clockwise, number, round
+              //char close_key = customKeypad.waitForKey();
             }
             else
             {
@@ -522,6 +575,61 @@ void callback(char *topic, byte *payload, unsigned int length)
     //Serial.println(msg);
     qr_confirm = true;
     qrcode.create(msg);
+    Serial.println("qr_confirm = true");
+  }
+  if (strcmp(topic, "/NodeMCU/promptpaycheck") == 0)
+  {
+    if (msg == "confirm")
+    {
+      snack_confirm = true;
+      Serial.println("ชำระเงิน สำเร็จ");
+      myDFPlayer.play(4);
+      // เอาขนมออก
+    }
+    else if (msg == "cancel")
+    {
+      snack_confirm = true;
+      Serial.println("ชำระเงิน ไม่สำเร็จ");
+      myDFPlayer.play(6);
+      //
+    }
+  }
+  if (strcmp(topic, "/motor") == 0)
+  {
+    int s = msg.length();
+    //Serial.print(s);
+    for (size_t i = 0; i < s; i++)
+    {
+      if (i % 2 == 0)
+      {
+        int pinnn = msg[i] - 48;
+        int round = msg[i + 1] - 48;
+        //Serial.print(i);
+        Serial.print(" = ");
+        Serial.print(pinnn);
+        Serial.print(",");
+        Serial.print(round);
+        Serial.println("");
+
+        if (round != 0)
+        {
+          step(HIGH, pinnn, round); // Set the spinning direction clockwise:
+          Serial.print("สั่งมอเตอร์ช่อง ");
+          Serial.print(pinnn);
+          Serial.print(" จำนวน ");
+          Serial.print(round);
+          Serial.println(" รอบ");
+        }
+      }
+    }
+    //int channel = msg.toInt();
+    //step(HIGH, channel, 1);
+
+    Serial.println("จบการทำงานส่งขนม");
+    //Serial.println(channel);
+    //0 = 48
+    //1 = 49
+    //2 = 50
   }
 
   /*if (msg != "0")
@@ -535,10 +643,10 @@ void callback(char *topic, byte *payload, unsigned int length)
   }*/
 }
 
-void step(boolean dir, byte stepperPin, int steps)
+void step(boolean dir, byte stepperPin, int steps) // ทิศทาง ขา รอบ
 {
-  mcp.digitalWrite(EN_MOTOR, LOW); // เปิดให้มอเตอร์ทำงาน
-  mcp.digitalWrite(DIR_MOTOR, dir);
+  mcp.digitalWrite(EN_MOTOR, LOW);  // เปิดให้มอเตอร์ทำงาน //
+  mcp.digitalWrite(DIR_MOTOR, dir); // ทิศทาง
   delay(100);
   //int roundd = steps * 200;
   for (int j = 0; j < steps; j++)
@@ -546,14 +654,15 @@ void step(boolean dir, byte stepperPin, int steps)
     for (int i = 0; i < SPR; i++)
     {
       mcp.digitalWrite(stepperPin, HIGH);
-      delayMicroseconds(3000);
+      delayMicroseconds(2000);
       mcp.digitalWrite(stepperPin, LOW);
-      delayMicroseconds(3000);
+      delayMicroseconds(2000);
     }
     delay(500);
   }
   delay(100);
   mcp.digitalWrite(EN_MOTOR, HIGH); // ปิดมอเตอร์
+  delay(100);
 }
 
 void printDetail(uint8_t type, int value)
@@ -627,8 +736,10 @@ void reconnect_mqtt()
     Serial.print("Re connecting...");
     if (client.connect("ESP8266Client", mqtt_user, mqtt_password))
     {
-      client.subscribe("/server/qrtext"); // ชื่อ topic ที่ต้องการติดตาม
-      //client.subscribe(topic); // ชื่อ topic ที่ต้องการติดตาม
+      client.subscribe("/server/qrtext");          // ชื่อ topic ที่ต้องการติดตาม
+      client.subscribe("/NodeMCU/promptpaycheck"); // ชื่อ topic ที่ต้องการติดตาม
+      client.subscribe("/motor");                  // ชื่อ topic ที่ต้องการติดตาม
+
       Serial.println("reconnected!");
     }
     else
